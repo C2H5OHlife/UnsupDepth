@@ -6,6 +6,11 @@ pixel_coords = None
 
 
 def set_id_grid(depth):
+    """
+    设置网格
+    :param depth: 深度图[B, H, W]
+    :return: 从(0, 0, 1) 到 （h, w, 1) 的网格
+    """
     global pixel_coords
     b, h, w = depth.size()
     i_range = torch.arange(0, h).view(1, h, 1).expand(1,h,w).type_as(depth)  # [1, H, W]
@@ -26,6 +31,7 @@ def check_sizes(input, input_name, expected):
 def pixel2cam(depth, intrinsics_inv):
     global pixel_coords
     """Transform coordinates in the pixel frame to the camera frame.
+    像素点的相平面坐标(x, y, 1) -> 空间坐标(x, y, z)
     Args:
         depth: depth maps -- [B, H, W]
         intrinsics_inv: intrinsics_inv matrix for each element of batch -- [B, 3, 3]
@@ -37,7 +43,7 @@ def pixel2cam(depth, intrinsics_inv):
         set_id_grid(depth)
     current_pixel_coords = pixel_coords[:,:,:h,:w].expand(b,3,h,w).reshape(b, 3, -1)  # [B, 3, H*W]
     cam_coords = (intrinsics_inv @ current_pixel_coords).reshape(b, 3, h, w)
-    return cam_coords * depth.unsqueeze(1)
+    return cam_coords * depth.unsqueeze(1)  # 近大远小
 
 
 def cam2pixel(cam_coords, proj_c2p_rot, proj_c2p_tr, padding_mode):
@@ -84,9 +90,10 @@ def euler2mat(angle):
     Returns:
         Rotation matrix corresponding to the euler angles -- size = [B, 3, 3]
     """
-    B = angle.size(0)
+    B = angle.size(0)  # batch_size
     x, y, z = angle[:,0], angle[:,1], angle[:,2]
 
+    # z轴是forward方向
     cosz = torch.cos(z)
     sinz = torch.sin(z)
 
@@ -110,7 +117,7 @@ def euler2mat(angle):
                         zeros,  cosx, -sinx,
                         zeros,  sinx,  cosx], dim=1).reshape(B, 3, 3)
 
-    rotMat = xmat @ ymat @ zmat
+    rotMat = xmat @ ymat @ zmat  # 矩阵乘法
     return rotMat
 
 
@@ -147,6 +154,7 @@ def pose_vec2mat(vec, rotation_mode='euler'):
     Returns:
         A transformation matrix -- [B, 3, 4]
     """
+    # 平移与旋转分离
     translation = vec[:, :3].unsqueeze(-1)  # [B, 3, 1]
     rot = vec[:,3:]
     if rotation_mode == 'euler':
@@ -180,6 +188,7 @@ def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='eu
 
     batch_size, _, img_height, img_width = img.size()
 
+    # [B, H, W] -> [B, 3, H, W]
     cam_coords = pixel2cam(depth, intrinsics_inv)  # [B,3,H,W]
 
     pose_mat = pose_vec2mat(pose, rotation_mode)  # [B,3,4]
@@ -187,6 +196,7 @@ def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='eu
     # Get projection matrix for tgt camera frame to source pixel frame
     proj_cam_to_src_pixel = intrinsics @ pose_mat  # [B, 3, 4]
 
+    # 找到对应tgt_img各个位置的像素在src_img上的坐标src_pixel_coords
     src_pixel_coords = cam2pixel(cam_coords, proj_cam_to_src_pixel[:,:,:3], proj_cam_to_src_pixel[:,:,-1:], padding_mode)  # [B,H,W,2]
     projected_img = F.grid_sample(img, src_pixel_coords, padding_mode=padding_mode)
 
