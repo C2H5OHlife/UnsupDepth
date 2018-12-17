@@ -20,9 +20,9 @@ parser.add_argument("--img-height", default=128, type=int, help="Image height")
 parser.add_argument("--img-width", default=416, type=int, help="Image width")
 parser.add_argument("--no-resize", action='store_true', help="no resizing is done")
 
-parser.add_argument("--dataset-list", default=None, type=str, help="Dataset list file")
-parser.add_argument("--dataset-dir", default='E:/PCProjects/val_image', type=str, help="Dataset directory")
-parser.add_argument("--output-dir", default='E:/PCProjects/output', type=str, help="Output directory")
+parser.add_argument("--dataset-list", default='./kitti_eval/test_files_eigen.txt', type=str, help="Dataset list file")
+parser.add_argument("--dataset-dir", default='K:/Dataset/KITTI', type=str, help="Dataset directory")
+parser.add_argument("--output-dir", default='E:/PCProjects/output_origin', type=str, help="Output directory")
 
 parser.add_argument("--img-exts", default=['png', 'jpg', 'bmp'], nargs='*', type=str, help="images extensions to glob")
 
@@ -37,7 +37,7 @@ def main():
         return
 
     # disp_net = DispNetS().to(device)
-    disp_net = DispResNet(3).to(device)
+    disp_net = DispResNet(3, alpha=1).to(device)
     weights = torch.load(args.pretrained)
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
@@ -57,6 +57,7 @@ def main():
 
     print('{} files to test'.format(len(test_files)))
 
+    count = 0
     for file in tqdm(test_files, ncols=100):
 
         img = imread(file).astype(np.float32)
@@ -73,11 +74,14 @@ def main():
 
         if args.output_disp:
             disp = (255*tensor2array(output, max_value=None, colormap='bone', channel_first=False)).astype(np.uint8)
-            imsave(output_disp/'{}_disp{}'.format(file.namebase,file.ext), disp)
+            img = np.transpose(img, (1, 2, 0))
+            im_save = np.concatenate((disp, img), axis=1).astype(np.uint8)
+            imsave(output_disp/'{}_disp{}'.format(count, file.ext), im_save)
         if args.output_depth:
             depth = 1/output
-            depth = (255*tensor2array(depth, max_value=10, colormap='rainbow', channel_first=False)).astype(np.uint8)
-            imsave(output_depth/'{}_depth{}'.format(file.namebase,file.ext), depth)
+            depth = (255*tensor2array(depth, max_value=1, colormap='rainbow', channel_first=False)).astype(np.uint8)
+            imsave(output_depth/'{}_depth{}'.format(count, file.ext), depth)
+        count += 1
 
 
 if __name__ == '__main__':

@@ -69,7 +69,7 @@ parser.add_argument('--log-full', default='progress_log_full.csv', metavar='PATH
                     help='csv where to save per-gradient descent train stats')
 parser.add_argument('-p', '--photo-loss-weight', type=float, help='weight for photometric loss', metavar='W', default=1)
 parser.add_argument('-m', '--mask-loss-weight', type=float, help='weight for explainabilty mask loss', metavar='W', default=0.2)
-parser.add_argument('-s', '--smooth-loss-weight', type=float, help='weight for disparity smoothness loss', metavar='W', default=0.05)
+parser.add_argument('-s', '--smooth-loss-weight', type=float, help='weight for disparity smoothness loss', metavar='W', default=0.1)
 parser.add_argument('--log-output', action='store_true', help='will log dispnet outputs and warped imgs at validation step')
 parser.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output',
                     metavar='N', default=0)
@@ -232,7 +232,7 @@ def main():
         # Up to you to chose the most relevant error to measure your model's performance, careful some measures are to maximize (such as a1,a2,a3)
         # 验证输出四个loss：总体final loss，warping loss以及mask正则化loss
         # 可自选以哪一种loss作为best model的标准
-        decisive_error = errors[1]
+        decisive_error = errors[0]
         if best_error < 0:
             best_error = decisive_error
 
@@ -276,6 +276,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, tra
         intrinsics = intrinsics.to(device)
         intrinsics_inv = intrinsics_inv.to(device)
 
+        #TODO: 把disp到depth的变换放到photometric_reconstruction_loss里面
         # compute output
         disparities = disp_net(tgt_img)
         focal = intrinsics[:, 0, 0].view(-1, 1, 1, 1)
