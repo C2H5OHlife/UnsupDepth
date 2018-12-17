@@ -74,8 +74,6 @@ parser.add_argument('--log-output', action='store_true', help='will log dispnet 
 parser.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output',
                     metavar='N', default=0)
 
-parser.add_argument('--show', action='store_true', help='display network output')
-
 best_error = -1
 n_iter = 0
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -261,6 +259,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, tra
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter(precision=4)
+
     w1, w2, w3 = args.photo_loss_weight, args.mask_loss_weight, args.smooth_loss_weight
 
     # switch to train mode
@@ -279,7 +278,9 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, tra
 
         # compute output
         disparities = disp_net(tgt_img)
-        depth = [1/disp[:,0].unsqueeze(1) for disp in disparities]
+        focal = intrinsics[:, 0, 0].view(-1, 1, 1, 1)
+        # depth = baseline * focal / disparity
+        depth = [0.54 * focal/(disp[:,0].unsqueeze(1) * 0.3 * tgt_img.size(3)) for disp in disparities]
         explainability_mask, pose = pose_exp_net(tgt_img, ref_imgs)
 
         loss_1 = photometric_reconstruction_loss(tgt_img, ref_imgs,
@@ -388,7 +389,9 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, output_
 
         # compute output
         disp = disp_net(tgt_img)
-        depth = 1/disp[:, 0].unsqueeze(1)
+        focal = intrinsics[:, 0, 0].view(-1, 1, 1, 1)
+        depth = 0.54 * focal / (disp[:, 0].unsqueeze(1) * 0.3 * tgt_img.size(3))
+
         explainability_mask, pose = pose_exp_net(tgt_img, ref_imgs)
 
         loss_1 = photometric_reconstruction_loss(tgt_img, ref_imgs,

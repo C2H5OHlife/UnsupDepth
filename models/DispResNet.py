@@ -137,7 +137,7 @@ class get_disp(nn.Module):
 
 
 class DispResNet(nn.Module):
-    def __init__(self, num_in_layers, alpha=10, beta=0.01):
+    def __init__(self, num_in_layers, alpha=1, beta=0.01):
         super(DispResNet, self).__init__()
         self.alpha = alpha
         self.beta = beta
@@ -228,7 +228,6 @@ class DispResNet(nn.Module):
             return self.disp1, self.disp2, self.disp3, self.disp4
         else:
             return self.disp1
-
 
     def init_weights(self):
         for m in self.modules():
