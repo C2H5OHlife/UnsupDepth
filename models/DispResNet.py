@@ -131,13 +131,14 @@ class get_disp(nn.Module):
         p2d = (p, p, p, p)
         x = self.conv1(F.pad(x, p2d))
         x = self.normalize(x)
-        # 为啥有个0.3？
-        return self.sigmoid(x)
+        # 限制最大disparity等于图像宽度的30%
+        # 10 * sigmoid + 0.01
+        return 0.3 * self.sigmoid(x)
 
 
 
 class DispResNet(nn.Module):
-    def __init__(self, num_in_layers, alpha=1, beta=0.01):
+    def __init__(self, num_in_layers, alpha=1, beta=0):
         super(DispResNet, self).__init__()
         self.alpha = alpha
         self.beta = beta

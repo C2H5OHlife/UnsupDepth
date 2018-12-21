@@ -120,6 +120,7 @@ def main():
             scale_factor = sample['displacement'] / mean_displacement_magnitude
             errors[0,:,j] = compute_errors(gt_depth, pred_depth_zoomed*scale_factor)
 
+        # 求量纲之间的scaling factor
         scale_factor = np.median(gt_depth)/np.median(pred_depth_zoomed)
         errors[1,:,j] = compute_errors(gt_depth, pred_depth_zoomed*scale_factor)
 

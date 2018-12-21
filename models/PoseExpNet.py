@@ -70,7 +70,11 @@ class PoseExpNet(nn.Module):
 
         pose = self.pose_pred(out_conv7)
         pose = pose.mean(3).mean(2)
-        pose = 0.01 * pose.view(pose.size(0), self.nb_ref_imgs, 6)  # 为什么 x 0.01
+        """
+        The intuition was that since we are sampling consecutive frames,
+        the pose change should be relatively small. So multiplying by a small constant(0.01) incorporates such prior information.
+        """
+        pose = 0.1 * pose.view(pose.size(0), self.nb_ref_imgs, 6)  # 为什么 x 0.01
 
         if self.output_exp:
             out_upconv5 = self.upconv5(out_conv5  )[:, :, 0:out_conv4.size(2), 0:out_conv4.size(3)]

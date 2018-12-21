@@ -29,7 +29,6 @@ def check_sizes(input, input_name, expected):
 
 
 def pixel2cam(depth, intrinsics_inv):
-    global pixel_coords
     """Transform coordinates in the pixel frame to the camera frame.
     像素点的相平面坐标(x, y, 1) -> 空间坐标(x, y, z)
     Args:
@@ -38,7 +37,14 @@ def pixel2cam(depth, intrinsics_inv):
     Returns:
         array of (u,v,1) cam coordinates -- [B, 3, H, W]
     """
+    global pixel_coords
     b, h, w = depth.size()
+    """
+    X = ( u - cu) * base / disparity = ( u - cu) * depth / focal
+    Y = ( v - cv) * base / disparity = ( v - cv) * depth / focal
+    Z = focal * base / d = depth
+    cu和cv是相机的principal point 
+    """
     if (pixel_coords is None) or pixel_coords.size(2) < h:
         set_id_grid(depth)
     current_pixel_coords = pixel_coords[:,:,:h,:w].expand(b,3,h,w).reshape(b, 3, -1)  # [B, 3, H*W]
@@ -68,6 +74,7 @@ def cam2pixel(cam_coords, proj_c2p_rot, proj_c2p_tr, padding_mode):
     Y = pcoords[:, 1]
     Z = pcoords[:, 2].clamp(min=1e-3)
 
+    # intrinsic matrix已经在得到得到project矩阵时乘过了
     X_norm = 2*(X / Z)/(w-1) - 1  # Normalized, -1 if on extreme left, 1 if on extreme right (x = w-1) [B, H*W]
     Y_norm = 2*(Y / Z)/(h-1) - 1  # Idem [B, H*W]
     if padding_mode == 'zeros':
@@ -188,7 +195,7 @@ def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='eu
 
     batch_size, _, img_height, img_width = img.size()
 
-    # [B, H, W] -> [B, 3, H, W]
+    # [B, H, W] -> [B, 3, H, W] 2D变回3D
     cam_coords = pixel2cam(depth, intrinsics_inv)  # [B,3,H,W]
 
     pose_mat = pose_vec2mat(pose, rotation_mode)  # [B,3,4]
@@ -201,3 +208,37 @@ def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='eu
     projected_img = F.grid_sample(img, src_pixel_coords, padding_mode=padding_mode)
 
     return projected_img
+
+
+def apply_disparity(img, disp):
+    batch_size, _, height, width = img.size()
+    # Original coordinates of pixels
+    # x_base和y_base在零到一之间
+    x_base = torch.linspace(0, 1, width).repeat(batch_size, height, 1).type_as(img)
+    y_base = torch.linspace(0, 1, height).repeat(batch_size, width, 1).transpose(1, 2).type_as(img)
+    # Apply shift in X direction
+    x_shifts = disp[:, 0, :, :]  # Disparity is passed in NCHW format with 1 channel
+    flow_field = torch.stack((x_base + x_shifts, y_base), dim=3)
+    # In grid_sample coordinates are assumed to be between -1 and 1 网格范围[-1, 1]
+    output = F.grid_sample(img, 2 * flow_field - 1, mode='bilinear',
+                           padding_mode='zeros')
+    return output
+
+
+def disp_warp(left, right, disp):
+    """
+    利用双目图像和视差估计，生成对应的图像
+    :param left: left camera image [B, 3, H, W]
+    :param right: right camera image [B, 3, H, W]
+    :param disp: 两张视差图（左右， 2 channels） [B, 2, H, W]
+    :return: 左图对右图的估计和右图对左图的估计
+    """
+
+    disp_left_est = disp[:, 0, :, :].unsqueeze(1)
+    disp_right_est = disp[:, 1, :, :].unsqueeze(1)
+
+    # 左图生成右图 / 右图生成左图
+    left_est = apply_disparity(right, -disp_left_est)
+    right_est= apply_disparity(left, disp_right_est)
+
+    return left_est, right_est
