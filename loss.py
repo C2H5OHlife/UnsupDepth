@@ -29,7 +29,7 @@ def compute_ssim(x, y):
 
 def reconstruction_loss(tgt_img, ref_imgs, par_img, intrinsics, intrinsics_inv, depth, disps, explainability_mask, pose, rotation_mode='euler', padding_mode='zeros'):
     # depth 自动取第一个channel： depth[:, 0] (line 27) 改成在外面取好第一个channel了
-    def one_scale(count, disp, depth, explainability_mask):
+    def one_scale(disp, depth, explainability_mask):
         assert (explainability_mask is None or depth.size()[-2:] == explainability_mask.size()[-2:])
         assert (pose.size(1) == len(ref_imgs))
 
@@ -66,46 +66,45 @@ def reconstruction_loss(tgt_img, ref_imgs, par_img, intrinsics, intrinsics_inv, 
             reconstruction_loss += diff.abs().mean()
             assert ((reconstruction_loss == reconstruction_loss).item() == 1)
 
-            # 3. 计算mask损失
-            mask_loss = 0
-            if explainability_mask is not None:
-                ones_var = Variable(torch.ones(1)).expand_as(explainability_mask).type_as(explainability_mask)
-                mask_loss = nn.functional.binary_cross_entropy(explainability_mask, ones_var)
+        # 3. 计算mask损失
+        mask_loss = 0
+        if explainability_mask is not None:
+            ones_var = Variable(torch.ones(1)).expand_as(explainability_mask).type_as(explainability_mask)
+            mask_loss = nn.functional.binary_cross_entropy(explainability_mask, ones_var)
 
-            # 4. 计算smoothness损失
-            left_disp_est = disp[:, 0, :, :].unsqueeze(1)
-            right_disp_est = disp[:, 1, :, :].unsqueeze(1)
+        # 4. 计算smoothness损失
+        left_disp_est = disp[:, 0, :, :].unsqueeze(1)
+        right_disp_est = disp[:, 1, :, :].unsqueeze(1)
 
-            def gradient_x(img):
-                # Pad input to keep output size consistent
-                img = F.pad(img, (0, 1, 0, 0), mode="replicate")
-                gx = img[:, :, :, :-1] - img[:, :, :, 1:]  # NCHW
-                return gx
+        def gradient_x(img):
+            # Pad input to keep output size consistent
+            img = F.pad(img, (0, 1, 0, 0), mode="replicate")
+            gx = img[:, :, :, :-1] - img[:, :, :, 1:]  # NCHW
+            return gx
 
-            def gradient_y(img):
-                # Pad input to keep output size consistent
-                img = F.pad(img, (0, 0, 0, 1), mode="replicate")
-                gy = img[:, :, :-1, :] - img[:, :, 1:, :]  # NCHW
-                return gy
-            smooth_loss = 0
-            for d, img in zip([left_disp_est, right_disp_est], [tgt_img_scaled, par_img_scaled]):
-                disp_gradients_x = gradient_x(d)
-                disp_gradients_y = gradient_y(d)
-                img_gradients_x = gradient_x(img).abs()
-                img_gradients_y = gradient_y(img).abs()
-                weights_x = torch.exp(-torch.mean(img_gradients_x, 1, keepdim=True))
-                weights_y = torch.exp(-torch.mean(img_gradients_y, 1, keepdim=True))
+        def gradient_y(img):
+            # Pad input to keep output size consistent
+            img = F.pad(img, (0, 0, 0, 1), mode="replicate")
+            gy = img[:, :, :-1, :] - img[:, :, 1:, :]  # NCHW
+            return gy
+        smooth_loss = 0
+        for d, img in zip([left_disp_est, right_disp_est], [tgt_img_scaled, par_img_scaled]):
+            disp_gradients_x = gradient_x(d)
+            disp_gradients_y = gradient_y(d)
+            img_gradients_x = gradient_x(img).abs()
+            img_gradients_y = gradient_y(img).abs()
+            weights_x = torch.exp(-torch.mean(img_gradients_x, 1, keepdim=True))
+            weights_y = torch.exp(-torch.mean(img_gradients_y, 1, keepdim=True))
 
-                smoothness_x = disp_gradients_x * weights_x
-                smoothness_y = disp_gradients_y * weights_y
-                smooth_loss += torch.mean(torch.abs(smoothness_x) + torch.abs(smoothness_y)) / (2 ** count)
+            smoothness_x = disp_gradients_x * weights_x
+            smoothness_y = disp_gradients_y * weights_y
+            smooth_loss += torch.mean(torch.abs(smoothness_x) + torch.abs(smoothness_y)) / downscale
 
-            # 5. 计算consistency损失
-            left_disp_warped, right_disp_warped = disp_warp(left_disp_est, right_disp_est, disp)
-            consistency_loss = (left_disp_warped - left_disp_est).abs().mean() + (right_disp_warped - right_disp_est).abs().mean()
+        # 5. 计算consistency损失
+        left_disp_warped, right_disp_warped = disp_warp(left_disp_est, right_disp_est, disp)
+        consistency_loss = (left_disp_warped - left_disp_est).abs().mean() + (right_disp_warped - right_disp_est).abs().mean()
 
-            count += 1
-            return reconstruction_loss, disp_apply_loss, mask_loss, smooth_loss, consistency_loss
+        return reconstruction_loss, disp_apply_loss, mask_loss, smooth_loss, consistency_loss
 
     if type(explainability_mask) not in [tuple, list]:
         explainability_mask = [explainability_mask]
@@ -114,14 +113,12 @@ def reconstruction_loss(tgt_img, ref_imgs, par_img, intrinsics, intrinsics_inv, 
         disps = [disps]
 
     [loss_1, loss_2, loss_3, loss_4, loss_5] = [0] * 5
-    i = 0
     for disp, d, mask in zip(disps, depth, explainability_mask):
-        l1, l2, l3, l4, l5 = one_scale(i, disp, d, mask)
+        l1, l2, l3, l4, l5 = one_scale(disp, d, mask)
         loss_1 += l1
         loss_2 += l2
         loss_3 += l3
         loss_4 += l4
         loss_5 += l5
-        i += 1
 
     return loss_1, loss_2, loss_3, loss_4, loss_5
