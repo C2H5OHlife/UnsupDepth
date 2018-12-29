@@ -15,13 +15,16 @@ class test_framework_KITTI(object):
 
     def __getitem__(self, i):
         tgt = imread(self.img_files[i][0]).astype(np.float32)
-        depth = generate_depth_map(self.calib_dirs[i], self.gt_files[i], tgt.shape[:2], self.cams[i])
+        depth = generate_depth_map(self.calib_dirs[i], self.gt_files[i], tgt.shape[:2], self.cams[i])  # 利用点云数据生成深度图
+        focal_length, baseline = get_focal_length_baseline(self.calib_dirs[i], self.cams[i])
         return {'tgt': tgt,
                 'ref': [imread(img).astype(np.float32) for img in self.img_files[i][1]],
                 'path':self.img_files[i][0],
                 'gt_depth': depth,
                 'displacement': np.array(self.displacements[i]),
-                'mask': generate_mask(depth, self.min_depth, self.max_depth)
+                'mask': generate_mask(depth, self.min_depth, self.max_depth),
+                'baseline': baseline,
+                'focal_length': focal_length
                 }
 
     def __len__(self):
@@ -195,3 +198,22 @@ def generate_mask(gt_depth, min_depth, max_depth):
     crop_mask[crop[0]:crop[1],crop[2]:crop[3]] = 1
     mask = np.logical_and(mask, crop_mask)
     return mask
+
+
+def get_focal_length_baseline(calib_dir, cam):
+    cam2cam = read_calib_file(calib_dir / 'calib_cam_to_cam.txt')
+    P2_rect = cam2cam['P_rect_02'].reshape(3,4)
+    P3_rect = cam2cam['P_rect_03'].reshape(3,4)
+
+    # cam 2 is left of camera 0  -6cm
+    # cam 3 is to the right  +54cm
+    b2 = P2_rect[0,3] / -P2_rect[0,0]
+    b3 = P3_rect[0,3] / -P3_rect[0,0]
+    baseline = b3-b2
+
+    if cam==2:
+        focal_length = P2_rect[0,0]
+    elif cam==3:
+        focal_length = P3_rect[0,0]
+
+    return focal_length, baseline
