@@ -7,7 +7,7 @@ from path import Path
 import argparse
 from tqdm import tqdm
 
-from models import DispNetS, DispResNet
+from models import DispNetS, DispResNet, DispResNet50
 from utils import tensor2array
 
 parser = argparse.ArgumentParser(description='Inference script for DispNet learned with \
@@ -21,8 +21,10 @@ parser.add_argument("--img-width", default=416, type=int, help="Image width")
 parser.add_argument("--no-resize", action='store_true', help="no resizing is done")
 
 parser.add_argument("--dataset-list", default='./kitti_eval/test_files_eigen.txt', type=str, help="Dataset list file")
+# parser.add_argument("--dataset-list", default=None, type=str, help="Dataset list file")
 parser.add_argument("--dataset-dir", default='K:/Dataset/KITTI', type=str, help="Dataset directory")
-parser.add_argument("--output-dir", default='E:/PCProjects/output_12_18', type=str, help="Output directory")
+# parser.add_argument("--dataset-dir", default='C:/Users/zhoul/Desktop/Mytest', type=str, help="Dataset directory")
+parser.add_argument("--output-dir", default='K:/Work/2019experiment/output_03_12_25', type=str, help="Output directory")
 
 parser.add_argument("--img-exts", default=['png', 'jpg', 'bmp'], nargs='*', type=str, help="images extensions to glob")
 
@@ -37,7 +39,8 @@ def main():
         return
 
     # disp_net = DispNetS().to(device)
-    disp_net = DispResNet(3, alpha=1).to(device)
+    # disp_net = DispResNet(3, alpha=1).to(device)
+    disp_net = DispResNet50(3).to(device)
     weights = torch.load(args.pretrained)
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
@@ -68,7 +71,7 @@ def main():
         img = np.transpose(img, (2, 0, 1))
 
         tensor_img = torch.from_numpy(img).unsqueeze(0)
-        tensor_img = ((tensor_img/255 - 0.5)/0.2).to(device)
+        tensor_img = ((tensor_img/255 - 0.5)/0.5).to(device)
 
         output = disp_net(tensor_img)[0][0]
 
